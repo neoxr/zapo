@@ -2,12 +2,6 @@
 
 > `@neoxr/zapo` is a TypeScript connector for building WhatsApp bots on top of [zapo-js](https://www.npmjs.com/package/zapo-js). It creates and manages a WhatsApp connection, forwards client events, serializes incoming and outgoing messages, loads optional plugins, and adds high-level helpers for common message types.
 
-### Example
-
-To see an example in action, visit the [neoxr-bot](https://github.com/neoxr/neoxr-bot) repository.
-
-<p align="center"><img align="center" width="100%" src="https://raw.githubusercontent.com/neoxr/neoxr/refs/heads/main/wb.png" /></p>
-
 ### Options
 
 The following is the default configuration used when initializing a new Zapo connection. This setup is tailored for projects using this lib, and includes options for session management, plugin loading, and handling bot-specific behavior.
