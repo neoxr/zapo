@@ -1,6 +1,6 @@
 {
    "name": "@neoxr/zapo",
-   "version": "1.0.0",
+   "version": "1.0.1",
    "description": "TypeScript connector for building WhatsApp Bot (ZapoJS)",
    "main": "lib/index.js",
    "files": [
