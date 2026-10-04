@@ -1,6 +1,6 @@
 {
    "name": "@neoxr/zapo",
-   "version": "1.0.1",
+   "version": "1.0.2",
    "description": "TypeScript connector for building WhatsApp Bot (ZapoJS)",
    "main": "lib/index.js",
    "files": [
@@ -50,9 +50,6 @@
       "sharp": "~0.30.5",
       "syntax-error": "~1.4.0",
       "ws": "^8.21.3"
-   },
-   "peerDependencies": {
-      "better-sqlite3": "12.1.1"
    },
    "peerDependenciesMeta": {
       "better-sqlite3": {
