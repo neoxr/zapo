@@ -197,6 +197,15 @@ waSocket.ev.on('stanza_error', (update) => console.log(update))
 // declaration variable sock
 const client = waSocket.sock
 
+// send relay/raw message like baileys
+client.relayMessage(m.chat, {
+   extentedTextMessage: { text: 'Hi' }
+}, {
+   additionalAttributes: {},
+   additionalNodes: [],
+   ...options
+})
+
 // send a text message (auto tagged)
 client.reply(m.chat, `Test!`, m)
 
