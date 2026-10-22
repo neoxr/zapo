@@ -1,12 +1,114 @@
-## SIMPLICITY WHATSAPP BOT
+# @neoxr/zapo
 
-> `@neoxr/zapo` is a TypeScript connector for building WhatsApp bots on top of [zapo-js](https://www.npmjs.com/package/zapo-js). It creates and manages a WhatsApp connection, forwards client events, serializes incoming and outgoing messages, loads optional plugins, and adds high-level helpers for common message types.
+`@neoxr/zapo` is a TypeScript connector for building WhatsApp bots on top of [zapo-js](https://www.npmjs.com/package/zapo-js). It creates and manages the WhatsApp connection, forwards client events, serializes incoming and outgoing messages, loads optional plugins, and adds high-level helpers for common message types.
 
-### Options
+## Table of Contents
 
-The following is the default configuration used when initializing a new Zapo connection. This setup is tailored for projects using this lib, and includes options for session management, plugin loading, and handling bot-specific behavior.
+- [Quick Start](#quick-start)
+- [Connection Options](#connection-options)
+- [Session Storage](#session-storage)
+- [Events](#events)
+- [Message Object](#message-object)
+- [Messaging Functions](#messaging-functions)
+- [Running the Full Bot Base (neoxr-bot)](#running-the-full-bot-base-neoxr-bot)
+- [Troubleshooting](#troubleshooting)
 
-```Javascript
+---
+
+## Quick Start
+
+Get a working bot that replies to `ping` in about five minutes.
+
+### 1. Requirements
+
+- Node.js 20 or newer (LTS recommended)
+- FFmpeg installed and available in your `PATH` (needed for stickers, voice notes and video helpers)
+- A WhatsApp account to use as the bot number
+
+### 2. Create a project and install
+
+```bash
+mkdir my-bot && cd my-bot
+npm init -y
+npm install @neoxr/zapo
+```
+
+The examples below use ES modules, so add this to your `package.json`:
+
+```json
+{
+  "type": "module"
+}
+```
+
+### 3. Create `index.js`
+
+```javascript
+import { Client } from '@neoxr/zapo'
+
+const waSocket = new Client({
+   plugsdir: 'plugins',
+   presence: true,
+   online: true,
+   pairing: {
+      state: true, // set to false to log in with a QR code instead
+      number: '6285xxxxxxx' // bot number with country code, no "+" or spaces
+   },
+   create_session: { type: 'sqlite', session: 'bot-session' },
+   custom_id: 'neoxr',
+   engines: [], // optional: add store / voip engines here
+   debug: false
+})
+
+waSocket.on('connect', () => console.log('Connecting to WhatsApp...'))
+waSocket.on('ready', () => console.log('Bot is ready!'))
+waSocket.on('error', error => console.error(error))
+
+waSocket.on('message', async ctx => {
+   if (ctx.fromMe) return
+   if (ctx.text?.toLowerCase() === 'ping') {
+      await waSocket.sock.reply(ctx.chat, 'Pong!', ctx)
+   }
+})
+```
+
+### 4. Run
+
+```bash
+node index.js
+```
+
+### 5. Link your WhatsApp account
+
+- **Pairing code** (`pairing.state: true`): the console prints an 8-character code. On your phone open **WhatsApp > Linked devices > Link a device > Link with phone number instead** and enter it. You can choose your own code by setting `pairing.code` to 8 alphanumeric characters (for example `NEOXRBOT`).
+- **QR code** (`pairing.state: false`): scan the QR code printed in the console from **WhatsApp > Linked devices > Link a device**.
+
+After linking, send `ping` to the bot number. It should answer `Pong!`.
+
+> The session is saved by `create_session`. As long as the session file or database is kept, you do not have to pair again on the next start. Delete it to log in with a different number.
+
+### 6. Keep it running (optional)
+
+```bash
+npm install -g pm2
+pm2 start index.js --name neoxr-bot
+pm2 save
+pm2 logs neoxr-bot
+```
+
+### Next steps
+
+- Add commands as plugins in the `plugins` folder (see the `plugsdir` option).
+- Browse the [Messaging Functions](#messaging-functions) to send images, stickers, buttons and more.
+- Want a ready-made bot with downloader, group management and utilities? See [Running the Full Bot Base](#running-the-full-bot-base-neoxr-bot).
+
+---
+
+## Connection Options
+
+The following is the default configuration used when initializing a new Zapo connection. It covers session management, plugin loading and bot-specific behavior.
+
+```typescript
 type SessionType = 'mongo' | 'postgres' | 'local' | 'mysql' | 'sqlite' | 'redis'
 
 export interface ConnectionOpts {
@@ -33,11 +135,25 @@ export interface ConnectionOpts {
 }
 ```
 
-### Connection
+| Option | Type | Description |
+| --- | --- | --- |
+| `plugsdir` | `string` | Folder that contains your plugins. |
+| `online` | `boolean` | Mark the bot as online after connecting. |
+| `presence` | `boolean` | Receive and emit presence updates. |
+| `stealth` | `string` | Pretend to be another device to avoid bot detection. One of `ios`, `android`, `web`, `desktop`. |
+| `custom_id` | `string` | Identifier for this bot instance. Required. |
+| `pairing.state` | `boolean` | `true` for pairing code, `false` for QR scan. |
+| `pairing.number` | `string` | Bot number with country code. |
+| `pairing.code` | `string` | Optional custom pairing code (8 alphanumeric characters). |
+| `multiple` | `boolean` | Allow several bot sessions in one process. |
+| `create_session` | `object` | Where and how the session is stored. See [Session Storage](#session-storage). |
+| `setting` | `any` | Extra settings passed to your bot. |
+| `engines` | `any[]` | Optional engines such as `store` or `voip`. Use `[]` if you do not need them. |
+| `debug` | `boolean` | Print internal logs. Set to `true` to see how the module works. |
 
-Simple way to make connection
+Full example with all common options:
 
-```Javascript
+```javascript
 import { Client, Utils, Config } from '@neoxr/zapo'
 
 const waSocket = new Client({
@@ -45,26 +161,44 @@ const waSocket = new Client({
    presence: true,
    online: true,
    pairing: {
-      state: true, // Set to 'false' if you want to use QR scan
-      number: '6285xxxxxxx', // Your bot number
-      code: 'NEOXRBOT' // If you want a custom pairing code, enter 8 alphanumeric characters
+      state: true,
+      number: '6285xxxxxxx',
+      code: 'NEOXRBOT'
    },
    create_session: { type: 'sqlite', session: 'bot-session' },
-   // stealth: 'ios', // Stealth mode to avoid bot detection, device list : ios, android, web, dekstop
+   // stealth: 'ios',
    custom_id: 'neoxr',
-   engines: [store, voip], // Init store or voip
-   debug: false // Set to 'true' if you want to see how this module works :v
+   engines: [store, voip], // only if you have initialized them
+   debug: false
 })
 ```
 
-### Handling Events (Built-in)
+---
 
-There are several events that can be used are as follows :
+## Session Storage
 
-```Javascript
-waSocket.on('connect', () => console.log)
+`create_session.type` decides where the login session is kept:
+
+| Type | Typical use |
+| --- | --- |
+| `local` | Plain files in a local folder. Simplest option for development. |
+| `sqlite` | Single-file database. Good default for one bot on one server. |
+| `mysql` / `postgres` | Shared SQL database, useful for several instances. |
+| `mongo` | MongoDB, for example a hosted Atlas cluster. |
+| `redis` | Fast in-memory storage, for example on ephemeral hosting. |
+
+For anything other than `local` and `sqlite`, pass the connection details in `create_session.config`.
+
+---
+
+## Events
+
+### Built-in events
+
+```javascript
+waSocket.on('connect', () => console.log('connecting'))
 waSocket.on('error', error => console.log(error))
-waSocket.on('ready', () => console.log)
+waSocket.on('ready', () => console.log('ready'))
 waSocket.on('stories', ctx => console.log(ctx))
 waSocket.on('message', ctx => console.log(ctx))
 waSocket.on('message.delete', ctx => console.log(ctx))
@@ -76,50 +210,71 @@ waSocket.on('group.request', ctx => console.log(ctx))
 waSocket.on('presence', ctx => console.log(ctx))
 ```
 
-### Event Piping (Pipelining)
+### Event piping
 
-You can also use the default events from Zapo.
+You can also listen to the raw events emitted by zapo-js through `waSocket.ev`:
 
-```Javascript
-waSocket.ev.on('voip_call_incoming', (update) => console.log(update))
-waSocket.ev.on('voip_call_state', (update) => console.log(update))
-waSocket.ev.on('voip_call_ended', (update) => console.log(update))
-waSocket.ev.on('voip_call_error', (update) => console.log(update))
-waSocket.ev.on('voip_call_outbound_audio_finished', (update) => console.log(update))
-waSocket.ev.on('voip_call_inbound_video', (update) => console.log(update))
-waSocket.ev.on('voip_call_inbound_video_rtp', (update) => console.log(update))
-waSocket.ev.on('message', (update) => console.log(update))
-waSocket.ev.on('message_send', (update) => console.log(update))
-waSocket.ev.on('message_addon', (update) => console.log(update))
-waSocket.ev.on('message_protocol', (update) => console.log(update))
-waSocket.ev.on('message_bot_chunk', (update) => console.log(update))
-waSocket.ev.on('message_unavailable', (update) => console.log(update))
-waSocket.ev.on('receipt', (update) => console.log(update))
-waSocket.ev.on('presence', (update) => console.log(update))
-waSocket.ev.on('chatstate', (update) => console.log(update))
-waSocket.ev.on('call', (update) => console.log(update))
-waSocket.ev.on('group', (update) => console.log(update))
-waSocket.ev.on('newsletter', (update) => console.log(update))
-waSocket.ev.on('newsletter_message_update', (update) => console.log(update))
-waSocket.ev.on('business', (update) => console.log(update))
-waSocket.ev.on('picture', (update) => console.log(update))
-waSocket.ev.on('privacy', (update) => console.log(update))
-waSocket.ev.on('blocklist', (update) => console.log(update))
-waSocket.ev.on('own_username', (update) => console.log(update))
-waSocket.ev.on('mutation', (update) => console.log(update))
-waSocket.ev.on('mutation_send', (update) => console.log(update))
-waSocket.ev.on('history_sync_chunk', (update) => console.log(update))
-waSocket.ev.on('group_history_bundle', (update) => console.log(update))
-waSocket.ev.on('offline_resume', (update) => console.log(update))
-waSocket.ev.on('offline_thread_metadata', (update) => console.log(update))
-waSocket.ev.on('mex_notification', (update) => console.log(update))
-waSocket.ev.on('stream_failure', (update) => console.log(update))
-waSocket.ev.on('stanza_error', (update) => console.log(update))
+```javascript
+waSocket.ev.on('voip_call_incoming', update => console.log(update))
+waSocket.ev.on('voip_call_state', update => console.log(update))
+waSocket.ev.on('voip_call_ended', update => console.log(update))
+waSocket.ev.on('voip_call_error', update => console.log(update))
+waSocket.ev.on('voip_call_outbound_audio_finished', update => console.log(update))
+waSocket.ev.on('voip_call_inbound_video', update => console.log(update))
+waSocket.ev.on('voip_call_inbound_video_rtp', update => console.log(update))
+waSocket.ev.on('message', update => console.log(update))
+waSocket.ev.on('message_send', update => console.log(update))
+waSocket.ev.on('message_addon', update => console.log(update))
+waSocket.ev.on('message_protocol', update => console.log(update))
+waSocket.ev.on('message_bot_chunk', update => console.log(update))
+waSocket.ev.on('message_unavailable', update => console.log(update))
+waSocket.ev.on('receipt', update => console.log(update))
+waSocket.ev.on('presence', update => console.log(update))
+waSocket.ev.on('chatstate', update => console.log(update))
+waSocket.ev.on('call', update => console.log(update))
+waSocket.ev.on('group', update => console.log(update))
+waSocket.ev.on('newsletter', update => console.log(update))
+waSocket.ev.on('newsletter_message_update', update => console.log(update))
+waSocket.ev.on('business', update => console.log(update))
+waSocket.ev.on('picture', update => console.log(update))
+waSocket.ev.on('privacy', update => console.log(update))
+waSocket.ev.on('blocklist', update => console.log(update))
+waSocket.ev.on('own_username', update => console.log(update))
+waSocket.ev.on('mutation', update => console.log(update))
+waSocket.ev.on('mutation_send', update => console.log(update))
+waSocket.ev.on('history_sync_chunk', update => console.log(update))
+waSocket.ev.on('group_history_bundle', update => console.log(update))
+waSocket.ev.on('offline_resume', update => console.log(update))
+waSocket.ev.on('offline_thread_metadata', update => console.log(update))
+waSocket.ev.on('mex_notification', update => console.log(update))
+waSocket.ev.on('stream_failure', update => console.log(update))
+waSocket.ev.on('stanza_error', update => console.log(update))
 ```
 
-### Message Metadata
+---
 
-```Javascript
+## Message Object
+
+Every `message` event gives you a serialized message (`m` or `ctx`). Commonly used fields:
+
+| Field | Description |
+| --- | --- |
+| `m.chat` | Chat JID where the message was sent. |
+| `m.sender` | Sender JID (phone-number form). |
+| `m.text` | Text content of the message. |
+| `m.mtype` | Message type, for example `extendedTextMessage`. |
+| `m.isGroup` | `true` when sent in a group. |
+| `m.fromMe` | `true` when sent by the bot itself. |
+| `m.quoted` | The quoted message, or `null`. |
+| `m.mentionedJid` | List of mentioned JIDs. |
+| `m.key` | Message key (`remoteJid`, `id`, `fromMe`, `participant`, ...). |
+| `m.reply(...)` | Reply to the message. |
+| `m.react(...)` | React to the message. |
+| `m.download()` | Download attached media. |
+
+Example of a full object (group text message):
+
+```javascript
 {
    rawNode: {
       tag: 'message',
@@ -138,12 +293,7 @@ waSocket.ev.on('stanza_error', (update) => console.log(update))
          participant_pn: '6285887776722@s.whatsapp.net',
          t: '1790580591'
       },
-      content: [
-         [Object],
-         [Object],
-         [Object],
-         [Object]
-      ]
+      content: [[Object], [Object], [Object], [Object]]
    },
    key: {
       remoteJid: '120363418787692501@g.us',
@@ -161,18 +311,18 @@ waSocket.ev.on('stanza_error', (update) => console.log(update))
    timestampSeconds: 1790580591,
    expirationSeconds: 86400,
    pushName: 'Neoxr Creative',
-   message: e {
-      extendedTextMessage: e {
+   message: {
+      extendedTextMessage: {
          endCardTiles: [],
          text: '=> m',
          previewType: 0,
-         contextInfo: [e],
+         contextInfo: [Object],
          inviteLinkGroupTypeV2: 0
       },
-      messageContextInfo: e {
+      messageContextInfo: {
          threadId: [],
          messageSecret: [Uint8Array],
-         botMetadata: [e]
+         botMetadata: [Object]
       }
    },
    id: 'A512151D2087CBD787C23C1129D69EE5',
@@ -186,20 +336,28 @@ waSocket.ev.on('stanza_error', (update) => console.log(update))
    mentionedJid: [],
    expiration: 86400,
    text: '=> m',
-   reply: [Function(anonymous)],
-   react: [AsyncFunction(anonymous)],
-   download: [AsyncFunction(anonymous)]
+   reply: [Function],
+   react: [AsyncFunction],
+   download: [AsyncFunction]
 }
 ```
-### Messaging Function
 
-```Javascript
-// declaration variable sock
+---
+
+## Messaging Functions
+
+All helpers live on the socket client:
+
+```javascript
 const client = waSocket.sock
+```
 
-// send relay/raw message like baileys
+### Text and reactions
+
+```javascript
+// relay a raw message (like Baileys)
 client.relayMessage(m.chat, {
-   extentedTextMessage: { text: 'Hi' }
+   extendedTextMessage: { text: 'Hi' }
 }, {
    additionalAttributes: {},
    additionalNodes: [],
@@ -207,102 +365,113 @@ client.relayMessage(m.chat, {
 })
 
 // send a text message (auto tagged)
-client.reply(m.chat, `Test!`, m)
+client.reply(m.chat, 'Test!', m)
 
-// send a react message
-client.sendReact(m.chat, `💀`, m.key)
+// send a reaction
+client.sendReact(m.chat, '💀', m.key)
 
-// send a ptv message from path, url, or buffer (video duration 10s)
-client.sendPtv(m.chat, `./media/video/yemete.mp4`)
-
-// send a text message with custom thumbnail
-client.sendMessageModify(m.chat, `Test!`, m, {
+// send a text message with a custom thumbnail
+client.sendMessageModify(m.chat, 'Test!', m, {
    title: '© neoxr-bot',
    largeThumb: true,
    ads: false,
-   /* can buffer or url */
-   thumbnail: 'https://iili.io/HP3ODj2.jpg',
+   thumbnail: 'https://iili.io/HP3ODj2.jpg', // Buffer or URL
    url: 'https://chat.whatsapp.com/HYknAquOTrECm9KPJJQO1V'
 })
 
-// send a text message with custom thumbnail (preview link)
-client.sendMessageModify(m.chat, `Test!`, m, {
+// same, as a link preview
+client.sendMessageModify(m.chat, 'Test!', m, {
    title: '© neoxr-bot',
    largeThumb: true,
    type: 'preview-link',
-   /* choose: landscape (default), portrait, square */
-   ratio: 'landscape',
-   /* can buffer or url */
-   thumbnail: 'https://iili.io/HP3ODj2.jpg',
+   ratio: 'landscape', // landscape (default), portrait, square
+   thumbnail: 'https://iili.io/HP3ODj2.jpg', // Buffer or URL
    url: 'https://chat.whatsapp.com/HYknAquOTrECm9KPJJQO1V'
 })
+```
 
-// send a file from path, url, or buffer (auto extension)
+### Files and media
+
+All file helpers accept a path, URL or Buffer, and detect the extension automatically.
+
+```javascript
+// send a file
 client.sendFile(m.chat, 'https://iili.io/HP3ODj2.jpg', 'image.jpg', 'Test!', m)
 
-// send a document from path, url, or buffer (auto extension)
+// send as a document
 client.sendFile(m.chat, 'https://iili.io/HP3ODj2.jpg', 'image.jpg', 'Test!', m, {
    document: true
 })
 
-// send a photo live from path, url, or buffer (video)
+// send a live photo (video source)
 client.sendFile(m.chat, 'https://cdn.videy.co/7QUk0zRO1.mp4', 'video.mp4', 'Test!', m, {
    photo_live: true,
    // thumbnail: Buffer | URL | Path
 })
 
-// send a voicenote from path, url, or buffer
+// send a voice note
 client.sendFile(m.chat, './media/audio/ah.mp3', '', '', m, {
    ptt: true
 })
 
-// send a audio from path, url, or buffer with thumbnail in audio tag
+// send audio with a cover image in the audio tag
 client.sendFile(m.chat, './media/audio/ah.mp3', '', '', m, {
    audio_tag: {
-      APIC: < Buffer >
+      APIC: coverBuffer // Buffer
    }
 })
 
-// send a sticker message from url or buffer
-client.sendSticker(m.chat, 'https://iili.io/HP3ODj2.jpg', m, {
+// send a PTV (round video) message, 10 seconds max
+client.sendPtv(m.chat, './media/video/yemete.mp4')
+
+// send an album
+client.sendAlbumMessage(m.chat, [{
+   url: 'https://i.pinimg.com/736x/6f/a3/6a/6fa36aa2c367da06b2a4c8ae1cf9ee02.jpg',
+   caption: 'Content 1st', // optional
+   type: 'image' // optional
+}, {
+   url: 'https://i.pinimg.com/736x/0b/97/6f/0b976f0a7aa1aa43870e1812eee5a55d.jpg',
+   caption: 'Content 2nd',
+   type: 'image'
+}, {
+   url: 'https://i.pinimg.com/736x/8c/6d/db/8c6ddb5fe6600fcc4b183cb2ee228eb7.jpg',
+   caption: 'Content 3rd',
+   type: 'image'
+}], m)
+```
+
+### Stickers
+
+Source can be a URL or Buffer.
+
+```javascript
+const sticker = {
    packname: 'Sticker by',
    author: '© neoxr.js'
-})
+}
 
-// send an AI sticker message from url or buffer
-client.sendSticker(m.chat, 'https://iili.io/HP3ODj2.jpg', m, {
-   packname: 'Sticker by',
-   author: '© neoxr.js',
-   meta: true
-})
+client.sendSticker(m.chat, 'https://iili.io/HP3ODj2.jpg', m, sticker)                    // normal
+client.sendSticker(m.chat, 'https://iili.io/HP3ODj2.jpg', m, { ...sticker, meta: true })    // AI sticker
+client.sendSticker(m.chat, 'https://iili.io/HP3ODj2.jpg', m, { ...sticker, lock: true })    // lock sticker
+client.sendSticker(m.chat, 'https://iili.io/HP3ODj2.jpg', m, { ...sticker, premium: true }) // premium sticker
+```
 
-// send a lock sticker from url or buffer
-client.sendSticker(m.chat, 'https://iili.io/HP3ODj2.jpg', m, {
-   packname: 'Sticker by',
-   author: '© neoxr.js',
-   lock: true
-})
+### Polls and contacts
 
-// send a premium sticker message from url or buffer
-client.sendSticker(m.chat, 'https://iili.io/HP3ODj2.jpg', m, {
-   packname: 'Sticker by',
-   author: '© neoxr.js',
-   premium: true
-})
-
-// send poll result
+```javascript
+// poll result
 client.pollResult(m.chat, {
    name: 'Demo Poll Result',
    votes: [{
-      name: 'Jokowi',
+      name: 'Option A',
       count: 1500
    }, {
-      name: 'Prabowo',
+      name: 'Option B',
       count: 200
    }]
 }, m)
 
-// send contact message
+// contact card
 client.sendContact(m.chat, [{
    name: 'Wildan Izzudin',
    number: '6285887776722',
@@ -312,68 +481,72 @@ client.sendContact(m.chat, [{
    website: 'https://api.neoxr.my.id',
    email: 'contact@neoxr.my.id'
 })
+```
 
-// send interactive button message (your own risk)
-var buttons = [{
-   name: "quick_reply",
+### Interactive buttons
+
+> Interactive buttons depend on WhatsApp client behavior and may stop working at any time. Use at your own risk.
+
+```javascript
+const buttons = [{
+   name: 'quick_reply',
    buttonParamsJson: JSON.stringify({
-      display_text: "OWNER",
+      display_text: 'OWNER',
       id: '.owner'
    }),
 }, {
-   name: "cta_url",
+   name: 'cta_url',
    buttonParamsJson: JSON.stringify({
-      display_text: "Rest API",
-      url: "https://api.neoxr.my.id",
-      merchant_url: "https://api.neoxr.my.id"
+      display_text: 'Rest API',
+      url: 'https://api.neoxr.my.id',
+      merchant_url: 'https://api.neoxr.my.id'
    })
 }, {
-   name: "cta_copy",
+   name: 'cta_copy',
    buttonParamsJson: JSON.stringify({
-      display_text: "Copy",
-      copy_code: "123456"
+      display_text: 'Copy',
+      copy_code: '123456'
    })
 }, {
-   name: "cta_call",
+   name: 'cta_call',
    buttonParamsJson: JSON.stringify({
-      display_text: "Call",
-      phone_number: "6285887776722"
+      display_text: 'Call',
+      phone_number: '6285887776722'
    })
 }, {
-   name: "single_select",
+   name: 'single_select',
    buttonParamsJson: JSON.stringify({
-      title: "Tap!",
+      title: 'Tap!',
       sections: [{
          rows: [{
-            title: "Owner",
-            description: `X`,
-            id: `.owner`
+            title: 'Owner',
+            description: 'X',
+            id: '.owner'
          }, {
-            title: "Runtime",
-            description: `Y`,
-            id: `.run`
+            title: 'Runtime',
+            description: 'Y',
+            id: '.run'
          }]
       }]
    })
 }]
 
-// button & list
+// buttons and list
 client.replyButton(m.chat, buttons, m, {
    header: '',
    content: 'Hi!',
-   // v2: true, (for product style with image)
+   // v2: true, // product style with image
    type: 'interactive',
    footer: '',
    media: global.db.setting.cover // video or image link
 })
 
-// button & list (multiple)
+// buttons and list (grouped in a single select menu)
 client.replyButton(m.chat, buttons, m, {
    header: '',
    content: 'Hi!',
-   // v2: true, (for product style with image)
    footer: '',
-   media: global.db.setting.cover, // video or image link
+   media: global.db.setting.cover,
    multiple: {
       name: 'オートメーション',
       code: 'neoxr-bot',
@@ -383,18 +556,16 @@ client.replyButton(m.chat, buttons, m, {
    type: 'interactive'
 })
 
-// carousel message
+// carousel
 const cards = [{
    header: {
       image: global.db.setting.cover,
       hasMediaAttachment: true,
    },
-   body: {
-      text: "P"
-   },
+   body: { text: 'P' },
    nativeFlowMessage: {
       buttons: [{
-         name: "cta_url",
+         name: 'cta_url',
          buttonParamsJson: JSON.stringify({
             display_text: 'Contact Owner',
             url: 'https://api.neoxr.eu',
@@ -407,12 +578,10 @@ const cards = [{
       image: global.db.setting.cover,
       hasMediaAttachment: true,
    },
-   body: {
-      text: "P"
-   },
+   body: { text: 'P' },
    nativeFlowMessage: {
       buttons: [{
-         name: "cta_url",
+         name: 'cta_url',
          buttonParamsJson: JSON.stringify({
             display_text: 'Contact Owner',
             url: 'https://api.neoxr.eu',
@@ -428,9 +597,14 @@ client.replyButton(m.chat, [], m, {
    content: 'Hi! @0',
    cards
 })
+```
 
-// send old button all type
-var buttons = [{
+### Legacy buttons
+
+`text` and `footer` must not be empty.
+
+```javascript
+const buttons = [{
    text: 'Runtime',
    command: '.runtime'
 }, {
@@ -438,41 +612,41 @@ var buttons = [{
    command: '.stat'
 }]
 
-// button text
+// text
 client.replyButton(m.chat, buttons, m, {
    text: 'Hi @0',
-   footer: global.footer // do not empty
+   footer: global.footer
 })
 
-// button image & video
+// image or video
 client.replyButton(m.chat, buttons, m, {
-   text: 'Hi @0', // do not empty
-   footer: global.footer, // do not empty
-   media: global.db.setting.cover // video or image link
+   text: 'Hi @0',
+   footer: global.footer,
+   media: global.db.setting.cover
 })
 
-// button document
+// document
 client.replyButton(m.chat, buttons, m, {
-   text: 'Hi @0', // do not empty
-   footer: global.footer, // do not empty
-   media: global.db.setting.cover, // file link (all extension)
+   text: 'Hi @0',
+   footer: global.footer,
+   media: global.db.setting.cover, // any file link
    document: {
       filename: 'neoxr.jpg'
    }
 })
 
-// button location
+// location
 client.replyButton(m.chat, buttons, m, {
-   text: 'Hi @0', // do not empty
-   footer: global.footer, // do not empty
-   media: global.db.setting.cover, // file link (all extension)
+   text: 'Hi @0',
+   footer: global.footer,
+   media: global.db.setting.cover,
    location: {
       name: global.header,
       description: 'オートメーション'
    }
 })
 
-// old button + native flow
+// legacy buttons + native flow
 client.replyButton(m.chat, [{
    text: 'Runtime',
    command: '.runtime'
@@ -493,47 +667,35 @@ client.replyButton(m.chat, [{
       }]
    }
 }], m, {
-   text: 'Hi @0', // do not empty
-   footer: global.footer, // do not empty
-   media: global.db.setting.cover // video or image link
+   text: 'Hi @0',
+   footer: global.footer,
+   media: global.db.setting.cover
 })
+```
 
-// send album message
-client.sendAlbumMessage(m.chat, [{
-   url: 'https://i.pinimg.com/736x/6f/a3/6a/6fa36aa2c367da06b2a4c8ae1cf9ee02.jpg',
-   caption: 'Content 1st', // optional
-   type: 'image' // optional
-}, {
-   url: 'https://i.pinimg.com/736x/0b/97/6f/0b976f0a7aa1aa43870e1812eee5a55d.jpg',
-   caption: 'Content 2nd', // optional
-   type: 'image' // optional
-}, {
-   url: 'https://i.pinimg.com/736x/8c/6d/db/8c6ddb5fe6600fcc4b183cb2ee228eb7.jpg',
-   caption: 'Content 2nd', // optional
-   type: 'image' // optional
-}], m)
+### Group status
 
-// send group status (video & image)
+```javascript
+// image or video
 client.groupStatus(m.chat, {
-   media: 'https://i.pinimg.com/736x/0b/97/6f/0b976f0a7aa1aa43870e1812eee5a55d.jpg', // Support URL and Buffer
+   media: 'https://i.pinimg.com/736x/0b/97/6f/0b976f0a7aa1aa43870e1812eee5a55d.jpg', // URL or Buffer
    caption: 'Hi!'
 })
 
-// send group status (audio)
+// audio
 client.groupStatus(m.chat, {
-   media: 'https://example.com/audio.mp3', // Support URL and Buffer
+   media: 'https://example.com/audio.mp3', // URL or Buffer
    background: '#FF0000'
 })
 
-// send group status (text)
+// text
 client.groupStatus(m.chat, {
    text: 'Hi!',
    background: '#FF0000',
    color: '#222222'
 })
 
-// send group status (close friends)
-// same like group status just add private options
+// close friends: add the `private` option to any of the above
 client.groupStatus(m.chat, {
    text: 'Hi!',
    background: '#FF0000',
@@ -545,167 +707,195 @@ client.groupStatus(m.chat, {
    }
 })
 
-// send group status (instant)
+// instant: forward a quoted message as status
 client.groupStatus(m.chat, m.quoted.fakeObj, {
    private: {
       name: 'Neoxr Creative',
       emoji: '🔥'
    }
 })
+```
 
-// send meta message v1 (rich message)
+### Meta (rich) messages
+
+`sendMetaMsg` takes a list of blocks. Which blocks work depends on the version.
+
+**v1: text with mentions, tables and code**
+
+```javascript
 client.sendMetaMsg(m.chat, [{
-      text: `Hi @${m.sender.replace(/@.+/, '')} ✨, This is an example of a simple meta message that supports *mentions*, *tables* and *code format*.\n\nAnd below is an example of the code format.`
-   },
-   {
-      code: {
-         language: 'javascript',
-         code: fs.readFileSync('./error.js', 'utf-8')
-      }
-   },
-   {
-      text: `And this is an example of a table.`
-   },
-   {
-      table: {
-         title: 'Data',
-         headers: ['Code', 'Artist'],
-         rows: [
-            ['SSID-738', 'Yua Mikami'],
-            ['RTXU-849', `@${m.sender.replace(/@.+/, '')}`]
-         ]
-      }
-   }, {
-      text: 'You can add text, tables, and code formats as you like. 😎'
-   },], m, {
-      title: global.header,
-      mentions: [m.sender]
+   text: `Hi @${m.sender.replace(/@.+/, '')} ✨, this is a simple meta message that supports *mentions*, *tables* and *code format*.`
+}, {
+   code: {
+      language: 'javascript',
+      code: fs.readFileSync('./error.js', 'utf-8')
+   }
+}, {
+   text: 'And this is an example of a table.'
+}, {
+   table: {
+      title: 'Data',
+      headers: ['Code', 'Artist'],
+      rows: [
+         ['SSID-738', 'Artist A'],
+         ['RTXU-849', `@${m.sender.replace(/@.+/, '')}`]
+      ]
+   }
+}, {
+   text: 'You can add text, tables and code blocks as you like. 😎'
+}], m, {
+   title: global.header,
+   mentions: [m.sender]
 })
+```
 
-// send meta message v2 (rich message)
-client.sendMetaMsg(m.chat, [
-   {
-      text: `This is an example of a meta message that does not support *~mentions~* and *~tables~*, but has many variations. Such as citations [](https://api.neoxr.eu) and links [Neoxr API](https://api.neoxr.eu).\n\nCode formatting can still works :`
-   },
-   {
-      code: {
-         language: 'javascript',
-         code: fs.readFileSync('./error.js', 'utf-8')
-      }
-   },
-   {
-      muted: 'There is also muted text like this.'
-   },
-   {
-      suggestions: ['N', 'E', 'O', 'X', 'R', 'B', 'O', 'T']
-   },
-   {
-      sources: [{
-         icon: 'https://i.pinimg.com/736x/b4/e0/12/b4e012b9e55bc101eb2c89655888e2f1.jpg',
-         title: 'Github',
-         url: 'https://github.com/neoxr/neoxr-bot'
-      }]
-   }], m, {
-   title: global.header
-})
+**v2: citations, links, muted text, suggestions and sources** (no mentions or tables)
 
-// send meta message v3 (rich message)
-client.sendMetaMsg(m.chat, [
-   {
-      text: 'Photo and video media messages are supported, however, they do not support *~mentions~* and *~tables~*.\n\n---\n\nHere is an example of a reel:'
-   },
-   {
-      reels: [
-         'https://i.pinimg.com/736x/48/58/17/485817189f76066e8b22637d1310d3b4.jpg',
-         'https://i.pinimg.com/736x/0e/32/e3/0e32e35b0324a541ba7fe705330febde.jpg',
-         'https://i.pinimg.com/736x/88/78/b1/8878b18952e3587dd5c7502f35155731.jpg'
-      ].map(image => ({
-         creator: 'Neoxr Creative',
-         avatar: 'https://avatars.githubusercontent.com/u/52621597?v=4',
-         verified: true,
-         thumbnail: image,
-         url: 'https://api.neoxr.eu',
-         source: 'IG'
-      }))
-   },
-   {
-      text: '\n\n---\n\nHere is an example of a social media post:'
-   },
-   {
-      posts: [{
-         media: 'https://i.pinimg.com/736x/ba/fd/92/bafd92cf5c8fbd802cf59c51286fc13f.jpg',
-         caption: '하늘이 무너져도 솟아날 구멍은 있다는데, 난 그냥 그 구멍으로 들어가서 낮잠 잘래.',
-         source: 'FACEBOOK'
-      }, {
-         media: 'https://i.pinimg.com/1200x/ec/0a/fd/ec0afd363645fa73d9d17df1136fddd4.jpg',
-         caption: '냉장고랑 진지하게 대화했다. 걔는 자꾸 불빛을 깜빡이며 나한테 우주적 신호를 보내는 것 같아.',
-         source: 'THREADS'
-      }, {
-         media: 'https://i.pinimg.com/736x/53/dd/f9/53ddf9fcf881b704548f2b6c676b07a6.jpg',
-         caption: '어제 먹은 떡볶이가 사실 내 전생일지도 몰라. 쫄깃한 인생.',
-         source: 'INSTAGRAM'
-      }].map(v => ({
-         username: 'Neoxr Creative',
-         avatar: 'https://avatars.githubusercontent.com/u/52621597?v=4',
-         verified: true,
-         caption: v.caption,
-         url: 'https://api.neoxr.eu',
-         thumbnail: v.media,
-         source: v.source,
-         post_type: 'PHOTO'
-      }))
-   },
-   {
-      text: '\n\n---\n\nHere is an example of a non-slide product:\n\n'
-   },
-   {
-      products: {
-         title: 'Script Selfbot (WhatsApp Bot) [Free Update]',
-         image: 'https://imgkub.com/images/2026/01/14/image586735a7ca2a894a.jpg',
-         sale_price: 'Rp. 65.000',
-         brand: 'Neoxr Creative',
-         url: `https://wa.me/${Config.owner}`
-      }
-   },
-   {
-      text: '\n'
-   },
-   {
-      products: {
-         title: 'Payment Gateway',
-         image: 'https://imgkub.com/images/2026/01/22/image7af565014aadeae6.jpg',
-         sale_price: 'Rp. 80.000',
-         brand: 'Neoxr Creative',
-         url: `https://wa.me/${Config.owner}`
-      }
-   },
-   {
-      text: '\n\n---\n\nHere is an example of a slide product:'
-   },
-   {
-      products: [{
-         title: 'Script Premium (WhatsApp Bot) V5.1-Optima',
-         image: 'https://imgkub.com/images/2025/12/07/image6e1f9b94ba9ced64.jpg',
-         sale_price: 'Rp. 150.000'
-      }, {
-         title: 'Script E-Commerce (NeoCommerce)',
-         image: 'https://imgkub.com/images/2025/12/07/image42981ad8a7441ff7.jpg',
-         price: 'Rp. 175.000',
-         sale_price: 'Rp. 150.000'
-      }, {
-         title: 'Script Selfbot (WhatsApp Bot)',
-         image: 'https://imgkub.com/images/2026/01/14/image3b73a38fbc0a64c6.jpg',
-         sale_price: 'Rp. 55.000'
-      }, {
-         title: 'Temporary Uploader & URL Shortener',
-         image: 'https://imgkub.com/images/2025/12/13/imagef7b7c40836e6b3d2.jpg',
-         sale_price: 'Rp. 60.000'
-      }].map(v => ({
-         ...v,
-         brand: 'Neoxr Creative',
-         url: `https://wa.me/${Config.owner}`
-      }))
-   }], m, {
+```javascript
+client.sendMetaMsg(m.chat, [{
+   text: 'This meta message supports citations [](https://api.neoxr.eu) and links [Neoxr API](https://api.neoxr.eu).\n\nCode formatting still works:'
+}, {
+   code: {
+      language: 'javascript',
+      code: fs.readFileSync('./error.js', 'utf-8')
+   }
+}, {
+   muted: 'There is also muted text like this.'
+}, {
+   suggestions: ['N', 'E', 'O', 'X', 'R', 'B', 'O', 'T']
+}, {
+   sources: [{
+      icon: 'https://i.pinimg.com/736x/b4/e0/12/b4e012b9e55bc101eb2c89655888e2f1.jpg',
+      title: 'Github',
+      url: 'https://github.com/neoxr/neoxr-bot'
+   }]
+}], m, {
    title: global.header
 })
 ```
+
+**v3: reels, posts and products** (no mentions or tables)
+
+```javascript
+client.sendMetaMsg(m.chat, [{
+   text: 'Photo and video blocks are supported.\n\n---\n\nHere is an example of reels:'
+}, {
+   reels: [
+      'https://i.pinimg.com/736x/48/58/17/485817189f76066e8b22637d1310d3b4.jpg',
+      'https://i.pinimg.com/736x/0e/32/e3/0e32e35b0324a541ba7fe705330febde.jpg',
+      'https://i.pinimg.com/736x/88/78/b1/8878b18952e3587dd5c7502f35155731.jpg'
+   ].map(image => ({
+      creator: 'Neoxr Creative',
+      avatar: 'https://avatars.githubusercontent.com/u/52621597?v=4',
+      verified: true,
+      thumbnail: image,
+      url: 'https://api.neoxr.eu',
+      source: 'IG'
+   }))
+}, {
+   text: '\n\n---\n\nSocial media posts:'
+}, {
+   posts: [{
+      media: 'https://i.pinimg.com/736x/ba/fd/92/bafd92cf5c8fbd802cf59c51286fc13f.jpg',
+      caption: 'Caption one',
+      source: 'FACEBOOK'
+   }, {
+      media: 'https://i.pinimg.com/1200x/ec/0a/fd/ec0afd363645fa73d9d17df1136fddd4.jpg',
+      caption: 'Caption two',
+      source: 'THREADS'
+   }, {
+      media: 'https://i.pinimg.com/736x/53/dd/f9/53ddf9fcf881b704548f2b6c676b07a6.jpg',
+      caption: 'Caption three',
+      source: 'INSTAGRAM'
+   }].map(v => ({
+      username: 'Neoxr Creative',
+      avatar: 'https://avatars.githubusercontent.com/u/52621597?v=4',
+      verified: true,
+      caption: v.caption,
+      url: 'https://api.neoxr.eu',
+      thumbnail: v.media,
+      source: v.source,
+      post_type: 'PHOTO'
+   }))
+}, {
+   text: '\n\n---\n\nA single product (no slide):\n\n'
+}, {
+   products: {
+      title: 'Script Selfbot (WhatsApp Bot) [Free Update]',
+      image: 'https://imgkub.com/images/2026/01/14/image586735a7ca2a894a.jpg',
+      sale_price: 'Rp. 65.000',
+      brand: 'Neoxr Creative',
+      url: `https://wa.me/${Config.owner}`
+   }
+}, {
+   text: '\n\n---\n\nProducts as a slide:'
+}, {
+   products: [{
+      title: 'Script Premium (WhatsApp Bot) V5.1-Optima',
+      image: 'https://imgkub.com/images/2025/12/07/image6e1f9b94ba9ced64.jpg',
+      sale_price: 'Rp. 150.000'
+   }, {
+      title: 'Script E-Commerce (NeoCommerce)',
+      image: 'https://imgkub.com/images/2025/12/07/image42981ad8a7441ff7.jpg',
+      price: 'Rp. 175.000',
+      sale_price: 'Rp. 150.000'
+   }, {
+      title: 'Script Selfbot (WhatsApp Bot)',
+      image: 'https://imgkub.com/images/2026/01/14/image3b73a38fbc0a64c6.jpg',
+      sale_price: 'Rp. 55.000'
+   }].map(v => ({
+      ...v,
+      brand: 'Neoxr Creative',
+      url: `https://wa.me/${Config.owner}`
+   }))
+}], m, {
+   title: global.header
+})
+```
+
+---
+
+## Running the Full Bot Base (neoxr-bot)
+
+If you prefer a ready-made bot (downloader, group management and utilities) instead of starting from scratch, use the [neoxr-bot `5.0-ZAPO` branch](https://github.com/neoxr/neoxr-bot/tree/5.0-ZAPO), which is built on this library.
+
+```bash
+git clone -b 5.0-ZAPO https://github.com/neoxr/neoxr-bot
+cd neoxr-bot
+npm install
+```
+
+Fill in your bot number and settings in the configuration files, then start it:
+
+```bash
+# direct
+npm start
+
+# or with pm2
+pm2 start pm2.config.cjs && pm2 logs neoxr
+```
+
+Docker:
+
+```bash
+docker build -t bot .
+docker run -d --name neoxr bot && docker logs -f neoxr
+
+# stop
+docker stop neoxr
+```
+
+Some features (such as downloaders) need an API key from [api.neoxr.my.id](https://api.neoxr.my.id). Check the repository's own README for the exact configuration keys of this branch.
+
+---
+
+## Troubleshooting
+
+| Problem | What to try |
+| --- | --- |
+| Pairing code never appears | Make sure `pairing.state` is `true` and `pairing.number` has the country code with digits only. |
+| Asked to pair on every start | The session is not persisted. Check that `create_session` points to a writable location. |
+| Stickers, voice notes or video fail | Install FFmpeg and confirm `ffmpeg -version` works in the same shell. |
+| `Cannot use import statement outside a module` | Add `"type": "module"` to `package.json` or rename the file to `.mjs`. |
+| Bot is logged out or blocked | Avoid spamming and unofficial interactive messages; consider the `stealth` option. |
+| Need more detail | Set `debug: true` to see what the library is doing. |
