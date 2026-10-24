@@ -10,6 +10,7 @@
 - [Events](#events)
 - [Message Object](#message-object)
 - [Messaging Functions](#messaging-functions)
+- [Bot Detection](#bot-detection)
 - [Running the Full Bot Base (neoxr-bot)](#running-the-full-bot-base-neoxr-bot)
 - [Troubleshooting](#troubleshooting)
 
@@ -852,6 +853,154 @@ client.sendMetaMsg(m.chat, [{
    title: global.header
 })
 ```
+
+---
+
+## Bot Detection
+
+`client.evaluateSignals()` scores a message from 0 to 100 based on signals that bots tend to produce: template-style text, promo text, repeated or evenly timed messages, non-primary devices, custom message IDs, instant replies and more. It returns a verdict so you can decide what to do (warn, ignore, kick).
+
+### Verdicts
+
+| Verdict | Score | Meaning |
+| --- | --- | --- |
+| `OFFICIAL` | 0 - 24 | No meaningful bot signals. |
+| `WARN` | 25 - 59 | Suspicious, but not conclusive. |
+| `BOT` | 60 - 100 | Very likely automated. |
+
+### Result
+
+```javascript
+{
+   success: true,
+   verdict: 'BOT',
+   score: 100,
+   botSignals: ['bot_message_type', 'unknown_id_format'],
+   officialSignals: [],
+   message: {
+      id, chat, sender, fromMe, type,
+      senderDevice, deviceName, text, characters, timestamp
+   },
+   response: {
+      quotedMessageId,
+      durationSeconds, 
+      durationReason
+   },
+   client: {
+      loaded,          // true when a stanza was available
+      verdict,         // 'bot' | 'official' | null
+      reportingToken
+   },
+   history: {
+      analyzed, skipped, loaded, fromSender, matchedStored,
+      textAnalyzed, decorativeTexts, promoTexts,
+      automatedTexts, normalTexts, patternMatches
+   }
+}
+```
+
+Reaction, protocol, button-response, list-response and poll-update messages are skipped. They return `ignored: true` with `reason: 'ignored_message_type'`.
+
+If something throws internally, the function does not throw. It returns `{ success: false, error }`, so always check `result.success` first.
+
+### Options
+
+```javascript
+await client.evaluateSignals(m, {
+   target: 'quoted',
+   history: [],
+   limit: 300,
+   historyMode: 'always',
+   stanza: node,
+   chat: '120363418787692501@g.us',
+   sender: '6285887776722@s.whatsapp.net',
+   config: {}
+})
+```
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `target` | `'self' \| 'quoted'` | `'self'` (default) scores the message itself. `'quoted'` scores the message that was replied to (`ctx.quoted`). |
+| `history` | `any[]` | Your own message history. When omitted, history is loaded from the store (`loadMessages`). |
+| `limit` | `number` | How many messages to load from the store. Defaults to `config.MAX_HISTORY`. |
+| `historyMode` | `'always' \| 'auto'` | By default history analysis is skipped when the sender uses the primary device. `'always'` forces it. |
+| `stanza` | `object` | Raw message stanza. When omitted, it is loaded from the store (`loadNode`). |
+| `chat` | `string` | Fallback chat JID when the message does not carry one. |
+| `sender` | `string` | Fallback sender JID when the message does not carry one. |
+| `config` | `SignalConfig` | Override thresholds and scores for this call. See below. |
+
+The store used is the first entry of `engines`, or the built-in memory store when none is given. If it does not implement `loadMessages`, `loadMessage` or `loadNode`, history and stanza are empty and scoring is less accurate. Pass `history` and `stanza` yourself in that case.
+
+### Overriding the configuration
+
+Every threshold and score can be overridden, either for one call or globally.
+
+```javascript
+// one call
+await client.evaluateSignals(m, {
+   config: {
+      SIMILAR_THRESHOLD: 0.85,
+      DEVICE_SCORE: 30,
+      FREQUENCY_WINDOW_SECONDS: 5,
+      IGNORED_TYPES: { remove: ['reactionMessage'] },
+      BOT_MESSAGE_TYPES: { add: ['carouselMessage'] }
+   }
+})
+
+// every call
+client.evaluateSignals.config = {
+   HUMAN_DISCOUNT: 20,
+   MAX_HISTORY: 300
+}
+
+// read the defaults
+console.log(client.evaluateSignals.defaults)
+```
+
+Priority, lowest to highest: built-in defaults, then `client.evaluateSignals.config`, then `options.config`.
+
+Unknown keys, and values with the wrong type (for example a string where a number is expected), are ignored.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `FREQUENCY_WINDOW_SECONDS` | `10` | Window used to count burst messages (5 or more inside it is flagged). |
+| `REPEAT_WINDOW_SECONDS` | `120` | Window for detecting identical repeated messages. |
+| `SIMILAR_WINDOW_SECONDS` | `86400` | Window for detecting messages that follow the same template. |
+| `SIMILAR_THRESHOLD` | `0.75` | Similarity (0 - 1) at which two messages count as the same template. |
+| `SIMILAR_MIN_TOKENS` | `8` | Minimum tokens before token similarity is evaluated. |
+| `SIMILAR_MIN_LINES` | `3` | Minimum lines before line similarity is evaluated. |
+| `MAX_HISTORY` | `500` | Maximum history messages per sender. |
+| `HUMAN_DISCOUNT` | `15` | Behavior score subtracted when the text and history look normal. |
+| `DEVICE_SCORE` | `25` | Score added for a non-primary device. |
+| `HISTORY_TEXT_WINDOW` | `50` | Number of recent texts analyzed from history. |
+| `HISTORY_RATIO` | `0.3` | Share of history texts that must match a pattern to count as a history signal. |
+| `HISTORY_NORMAL_RATIO` | `0.9` | Share of history texts that must look normal to apply `HUMAN_DISCOUNT`. |
+| `HISTORY_NORMAL_MIN` | `5` | Minimum analyzed texts before the normal-history check applies. |
+| `REGULAR_MIN_GAPS` | `6` | Minimum message gaps before evenly timed messages are flagged. |
+| `STANZA_SCORE` | `60` | Score added when the stanza has no reporting token. |
+| `INSTANT_REPLY_SCORE` | `35` | Score added for a reply sent within 1 second of the quoted message. |
+| `IGNORED_CLIENT_TOKEN` | `'ignored_type'` | Value reported as `client.reportingToken` for ignored message types. |
+| `IGNORED_TYPES` | see below | Message types that are skipped. |
+| `BOT_MESSAGE_TYPES` | see below | Message types that immediately mark a message as a bot message. |
+
+`IGNORED_TYPES` defaults to `reactionMessage`, `protocolMessage`, `interactiveResponseMessage`, `buttonsResponseMessage`, `templateButtonReplyMessage`, `listResponseMessage`, `pollUpdateMessage`, `senderKeyDistributionMessage` and `messageHistoryNotice`.
+
+`BOT_MESSAGE_TYPES` defaults to `buttonsMessage`, `templateMessage`, `interactiveMessage`, `listMessage` and `highlyStructuredMessage`.
+
+For these two keys you can pass:
+
+| Value | Effect |
+| --- | --- |
+| `['a', 'b']` or `new Set([...])` | Replaces the whole list. |
+| `{ add: ['a'] }` | Adds to the defaults. |
+| `{ remove: ['a'] }` | Removes from the defaults. |
+| `{ add: [...], remove: [...] }` | Both. |
+
+### Tips
+
+- Run it on messages from other users only (`if (m.fromMe) return`).
+- A single `WARN` is weak evidence. Act on `BOT`, or on repeated `WARN` results from the same sender.
+- Lower `SIMILAR_THRESHOLD` catches more template variations but raises false positives.
 
 ---
 
