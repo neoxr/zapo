@@ -949,7 +949,7 @@ await client.evaluateSignals(m, {
 
 // every call
 client.evaluateSignals.config = {
-   HUMAN_DISCOUNT: 20,
+   OFFICIAL_DISCOUNT: 20,
    MAX_HISTORY: 300
 }
 
@@ -970,11 +970,11 @@ Unknown keys, and values with the wrong type (for example a string where a numbe
 | `SIMILAR_MIN_TOKENS` | `8` | Minimum tokens before token similarity is evaluated. |
 | `SIMILAR_MIN_LINES` | `3` | Minimum lines before line similarity is evaluated. |
 | `MAX_HISTORY` | `500` | Maximum history messages per sender. |
-| `HUMAN_DISCOUNT` | `15` | Behavior score subtracted when the text and history look normal. |
+| `OFFICIAL_DISCOUNT` | `15` | Behavior score subtracted when the text and history look normal. |
 | `DEVICE_SCORE` | `25` | Score added for a non-primary device. |
 | `HISTORY_TEXT_WINDOW` | `50` | Number of recent texts analyzed from history. |
 | `HISTORY_RATIO` | `0.3` | Share of history texts that must match a pattern to count as a history signal. |
-| `HISTORY_NORMAL_RATIO` | `0.9` | Share of history texts that must look normal to apply `HUMAN_DISCOUNT`. |
+| `HISTORY_NORMAL_RATIO` | `0.9` | Share of history texts that must look normal to apply `OFFICIAL_DISCOUNT`. |
 | `HISTORY_NORMAL_MIN` | `5` | Minimum analyzed texts before the normal-history check applies. |
 | `REGULAR_MIN_GAPS` | `6` | Minimum message gaps before evenly timed messages are flagged. |
 | `STANZA_SCORE` | `60` | Score added when the stanza has no reporting token. |
