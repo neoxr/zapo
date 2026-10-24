@@ -883,7 +883,7 @@ client.sendMetaMsg(m.chat, [{
    },
    response: {
       quotedMessageId,
-      durationSeconds, 
+      durationSeconds,
       durationReason
    },
    client: {
@@ -906,7 +906,7 @@ If something throws internally, the function does not throw. It returns `{ succe
 ### Options
 
 ```javascript
-await client.evaluateSignals(m, {
+await client.evaluateSignals(ctx, {
    target: 'quoted',
    history: [],
    limit: 300,
@@ -937,7 +937,7 @@ Every threshold and score can be overridden, either for one call or globally.
 
 ```javascript
 // one call
-await client.evaluateSignals(m, {
+await client.evaluateSignals(ctx, {
    config: {
       SIMILAR_THRESHOLD: 0.85,
       DEVICE_SCORE: 30,
@@ -979,15 +979,19 @@ Unknown keys, and values with the wrong type (for example a string where a numbe
 | `REGULAR_MIN_GAPS` | `6` | Minimum message gaps before evenly timed messages are flagged. |
 | `STANZA_SCORE` | `60` | Score added when the stanza has no reporting token. |
 | `INSTANT_REPLY_SCORE` | `35` | Score added for a reply sent within 1 second of the quoted message. |
+| `SPOOFED_INSTANT_REPLY_SCORE` | `50` | Score added for an instant reply (1 second or less) from a non-primary device whose name is in `SPOOFED_DEVICE_NAMES`. Replaces `INSTANT_REPLY_SCORE` in that case. |
+| `SPOOFED_MIN_SCORE` | `25` | Minimum total score (the WARN level) when that spoofed instant reply is detected. |
 | `IGNORED_CLIENT_TOKEN` | `'ignored_type'` | Value reported as `client.reportingToken` for ignored message types. |
 | `IGNORED_TYPES` | see below | Message types that are skipped. |
 | `BOT_MESSAGE_TYPES` | see below | Message types that immediately mark a message as a bot message. |
 
 `IGNORED_TYPES` defaults to `reactionMessage`, `protocolMessage`, `interactiveResponseMessage`, `buttonsResponseMessage`, `templateButtonReplyMessage`, `listResponseMessage`, `pollUpdateMessage`, `senderKeyDistributionMessage` and `messageHistoryNotice`.
 
-`BOT_MESSAGE_TYPES` defaults to `buttonsMessage`, `templateMessage`, `interactiveMessage`, `listMessage` and `highlyStructuredMessage`.
+`SPOOFED_DEVICE_NAMES` defaults to `android` and `ios`. A non-primary device (a linked companion) normally reports as web or desktop, so these names on a non-primary device suggest a spoofed client. When the reply is not instant (normal speed, or the message is not a reply), the device signals `non_primary_device` and `id_device_mismatch` are not counted for these names, so they do not push the verdict to `WARN` on their own.
 
-For these two keys you can pass:
+`BOT_MESSAGE_TYPES` defaults to `buttonsMessage`, `buttonMessage`, `templateMessage`, `interactiveMessage`, `listMessage` and `highlyStructuredMessage`.
+
+For these three keys you can pass:
 
 | Value | Effect |
 | --- | --- |
